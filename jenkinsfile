@@ -1,0 +1,63 @@
+pipeline {
+    agent any
+
+    environment {
+        DEPLOY_IP = '<Instance2-Public-IP>'  // Replace with EC2 Instance 2 IP
+        USER = 'ec2-user'  // Default EC2 username
+        PEM_FILE = '/path/to/your-key.pem'  // Path to your SSH private key
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git 'https://github.com/your-username/python-flask-jenkins.git'  // Use your GitHub repository URL
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                python3 -m venv venv
+                source venv/bin/activate
+                pip install -r requirements.txt
+                '''
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                sh '''
+                source venv/bin/activate
+                python -m unittest discover tests
+                '''
+            }
+        }
+
+        stage('Deploy to EC2') {
+            steps {
+                script {
+                    sshagent (credentials: ['ec2-ssh-key']) {
+                        // Copy files to EC2 Instance 2
+                        sh '''
+                        scp -i ${PEM_FILE} -r * ${USER}@${DEPLOY_IP}:/home/ec2-user/flask-app/
+                        '''
+                        
+                        // SSH into EC2 Instance 2 and deploy
+                        sh '''
+                        ssh -i ${PEM_FILE} ${USER}@${DEPLOY_IP} '
+                        cd /home/ec2-user/flask-app && python3 -m venv venv && 
+                        source venv/bin/activate && pip install -r requirements.txt && 
+                        nohup python app.py &'
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+    }
+}
